@@ -2,11 +2,23 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from duckduckgo_search import DDGS
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="Global AI Football Predictor", page_icon="⚽", layout="wide")
-st.title("⚽ Global AI Match Predictor")
-st.markdown("Live AI-backed predictions for Results, Goals, and GG market.")
+st.set_page_config(page_title="Global AI Match Predictor", page_icon="⚽", layout="wide")
+st.title("⚽ Global AI Match Predictor + Live News")
+st.markdown("Automated data updates, Live injury news, and AI-backed predictions.")
+
+# --- LIVE NEWS FUNCTION ---
+def get_team_news(team_name):
+    """Fetches the latest 3 headlines for the selected team."""
+    try:
+        with DDGS() as ddgs:
+            query = f"{team_name} football team injury news suspensions"
+            results = [r for r in ddgs.text(query, max_results=3)]
+            return results
+    except Exception:
+        return []
 
 # --- AUTOMATIC DATA FEED (2025/2026 Season) ---
 league_files = {
@@ -27,7 +39,7 @@ league_choice = st.sidebar.selectbox("Choose League", list(league_files.keys()))
 @st.cache_data
 def load_and_train_league(url):
     try:
-        # Load from URL with browser-like header to prevent blocking
+        # Load data with browser-like header
         df = pd.read_csv(url, storage_options={'User-Agent': 'Mozilla/5.0'})
         df.columns = df.columns.str.strip()
         
@@ -61,7 +73,7 @@ def load_and_train_league(url):
         
         return df, model_res, model_goals, model_gg, predictors
     except Exception as e:
-        st.error(f"⚠️ Data Load Error: {e}")
+        st.error(f"⚠️ League Data Error: {e}")
         return None, None, None, None, None
 
 # --- LOAD ACTIVE LEAGUE ---
@@ -76,12 +88,24 @@ if data is not None:
     # Team Selection
     teams = sorted(data["HomeTeam"].unique())
     col1, col2 = st.columns(2)
+    
     with col1:
         home = st.selectbox("🏠 Home Team", teams)
-        h_inj = st.slider(f"Key Home Absences ({home})", 0, 5, 0)
+        st.write("🔍 **Latest News:**")
+        h_news = get_team_news(home)
+        if h_news:
+            for n in h_news: st.caption(f"📰 {n['title'][:85]}...")
+        else: st.caption("No recent news found.")
+        h_inj = st.slider(f"Key Absences ({home})", 0, 5, 0)
+        
     with col2:
         away = st.selectbox("🚩 Away Team", teams)
-        a_inj = st.slider(f"Key Away Absences ({away})", 0, 5, 0)
+        st.write("🔍 **Latest News:**")
+        a_news = get_team_news(away)
+        if a_news:
+            for n in a_news: st.caption(f"📰 {n['title'][:85]}...")
+        else: st.caption("No recent news found.")
+        a_inj = st.slider(f"Key Absences ({away})", 0, 5, 0)
 
     if st.button("🚀 GENERATE PREDICTION"):
         try:
@@ -96,8 +120,10 @@ if data is not None:
             p_o25 = rf_goals.predict_proba(input_feats)[0][1]
             p_gg = rf_gg.predict_proba(input_feats)[0][1]
 
-            # Adjust Home Win based on Injuries
+            # ABSENCE IMPACT LOGIC (5% penalty per key player)
             h_win_final = max(0, min(1, p_res[2] - (h_inj * 0.05) + (a_inj * 0.05)))
+            a_win_final = max(0, min(1, p_res[0] - (a_inj * 0.05) + (h_inj * 0.05)))
+            draw_final = 1 - h_win_final - a_win_final
             
             # Results UI
             st.divider()
@@ -105,30 +131,32 @@ if data is not None:
             
             with res_col1:
                 st.subheader("Match Outcome")
-                st.write(f"🏠 **{home}:** {h_win_final*100:.1f}%")
-                st.write(f"🤝 **Draw:** {p_res[1]*100:.1f}%")
-                st.write(f"🚩 **{away}:** {(1 - h_win_final - p_res[1])*100:.1f}%")
+                st.metric(f"🏠 {home}", f"{h_win_final*100:.1f}%")
+                st.write(f"🤝 **Draw:** {draw_final*100:.1f}%")
+                st.write(f"🚩 **{away}:** {a_win_final*100:.1f}%")
                 
             with res_col2:
                 st.subheader("Goal Market")
-                st.write(f"⚽ **Over 2.5:** {p_o25*100:.1f}%")
+                st.metric("⚽ Over 2.5 Goals", f"{p_o25*100:.1f}%")
                 st.write(f"🛡️ **Under 2.5:** {(1-p_o25)*100:.1f}%")
 
             with res_col3:
                 st.subheader("GG Market")
-                st.write(f"🔥 **GG (Yes):** {p_gg*100:.1f}%")
-                st.write(f"🔒 **NG (No):** {(1-p_gg)*100:.1f}%")
+                st.metric("🔥 Both Teams Score", f"{p_gg*100:.1f}%")
+                st.write(f"🔒 **No Goal:** {(1-p_gg)*100:.1f}%")
 
             # --- FINAL VERDICT ---
             st.divider()
             if h_win_final > 0.65:
-                st.success(f"**RECOMMENDATION:** 🟢 {home} WIN")
+                st.success(f"**AI VERDICT:** 🟢 STRONG PLAY ON {home} WIN")
+            elif a_win_final > 0.65:
+                st.success(f"**AI VERDICT:** 🟢 STRONG PLAY ON {away} WIN")
             elif p_o25 > 0.65:
-                st.success(f"**RECOMMENDATION:** ⚽ OVER 2.5 GOALS")
+                st.success(f"**AI VERDICT:** ⚽ HIGH CHANCE OF OVER 2.5 GOALS")
             elif p_gg > 0.65:
-                st.success(f"**RECOMMENDATION:** 🔥 BOTH TEAMS TO SCORE (GG)")
+                st.success(f"**AI VERDICT:** 🔥 BOTH TEAMS TO SCORE (GG) LIKELY")
             else:
-                st.info("**RECOMMENDATION:** ⚪ NO CLEAR VALUE")
+                st.info("**AI VERDICT:** ⚪ AVOID - Prediction confidence too low.")
         except Exception:
-            st.error("Error processing this matchup. Please try different teams.")
-        
+            st.error("Not enough data to process this specific matchup. Try another team.")
+            
