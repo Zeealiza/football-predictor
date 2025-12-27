@@ -22,6 +22,7 @@ league_files = {
 }
 
 league_choice = st.sidebar.selectbox("Choose League", list(league_files.keys()))
+st.sidebar.write(f"Looking for: {league_files[league_choice]}")
 
 @st.cache_data
 def load_and_train_league(file_path):
@@ -125,3 +126,4 @@ if data is not None:
         except:
             st.error("Not enough recent data for these specific teams. Try another matchup.")
             
+
