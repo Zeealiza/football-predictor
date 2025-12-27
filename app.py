@@ -13,7 +13,6 @@ league_files = {
     "English Premier League": "epl.csv",
     "Belgium Pro League": "BL.csv",
     "Spanish La Liga": "SL.csv",
-    "Italian Serie A": "seriea.csv",
     "France Ligue 1": "FL.csv",
     "Portuguese League": "PL.csv",
     "Scottish League": "ScL.csv",
@@ -99,3 +98,4 @@ if data is not None:
                 ("PLAY HOME WIN" if p_res[2] > 0.65 else "PLAY OVER 2.5" if p_o25 > 0.65 else "AVOID - NO CLEAR VALUE"))
 
                 
+
