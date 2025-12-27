@@ -1,6 +1,6 @@
 pandas
-scikit-learn
 numpy
+scikit-learn
 streamlit
 fsspec
 duckduckgo-search
