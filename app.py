@@ -8,12 +8,18 @@ st.set_page_config(page_title="AI Football Predictor", page_icon="⚽", layout="
 st.title("⚽ Global AI Match Predictor")
 st.markdown("Select a league and input match details to get AI-backed predictions for Results and Goals.")
 
-# --- DATA SELECTION ---
+# --- DATA SELECTION (Aligned with your tablet file names) ---
 league_files = {
     "English Premier League": "epl.csv",
-    "Belgium Pro League": "BelgiumLeague.csv",
-    "Spanish La Liga": "laliga.csv",
-    "Italian Serie A": "seriea.csv"
+    "Belgium Pro League": "BL.csv",
+    "Spanish La Liga": "SL.csv",
+    "Italian Serie A": "seriea.csv",
+    "France Ligue 1": "FL.csv",
+    "Portuguese League": "PL.csv",
+    "Scottish League": "ScL.csv",
+    "German Bundesliga": "GL.csv",
+    "Netherlands Eredivisie": "NL.csv",
+    "Turkish Super Lig": "T1.csv"
 }
 
 league_choice = st.sidebar.selectbox("Choose League", list(league_files.keys()))
@@ -91,4 +97,5 @@ if data is not None:
         # --- FINAL VERDICT ---
         st.info(f"**AI Recommendation:** " + 
                 ("PLAY HOME WIN" if p_res[2] > 0.65 else "PLAY OVER 2.5" if p_o25 > 0.65 else "AVOID - NO CLEAR VALUE"))
+
                 
