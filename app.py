@@ -69,37 +69,44 @@ if data is not None:
         away = st.selectbox("🚩 Away Team", teams, index=1 if len(teams)>1 else 0)
         a_abs = st.slider(f"Absences ({away})", 0, 5, 0)
 
+        # ... (Your Data Loading Code stays the same) ...
+
     if st.button("🚀 RUN FULL PREDICTION"):
-        # Version Check (So you know it's the new code)
-        st.sidebar.caption("App Version: 2.0 (Tablet Optimized)")
-        
+        # 1. Fetch AI Predictions (Goals & Result)
         h_row = data[data["HomeTeam"] == home].iloc[-1]
         p_res = rf_res.predict_proba([[h_row[p] for p in predictors]])[0]
         p_o25 = rf_goal.predict_proba([[h_row[p] for p in predictors]])[0][1]
         p_gg = rf_gg.predict_proba([[h_row[p] for p in predictors]])[0][1]
 
-        # 10% Absence Adjustment
-        f_h = max(0, min(1, p_res[2] - (h_abs * 0.10) + (a_abs * 0.10)))
-        f_a = max(0, min(1, p_res[0] - (a_abs * 0.10) + (h_abs * 0.10)))
-        f_d = max(0, 1 - f_h - f_a)
+        # 2. Fetch Live Intel (Lineups & News) - MOVING THIS INSIDE THE BUTTON
+        with st.spinner("Fetching Live Lineups & News..."):
+            h_news = get_intel(home)
+            a_news = get_intel(away)
+            h_lineup = get_intel(home, mode="lineup")
+            a_lineup = get_intel(away, mode="lineup")
 
-        # --- SECTION 1: WINNER (Big Metrics) ---
-        st.subheader("🏆 Win Probability")
-        # We use columns here, but on tablets, these will stack vertically
+        # --- DISPLAY SECTION (Tablet Optimized) ---
+        st.divider()
+        
+        # 🏆 Result
+        st.subheader("🏆 Match Winner AI")
         c1, c2, c3 = st.columns(3)
-        c1.metric(home, f"{f_h*100:.1f}%")
-        c2.metric("Draw", f"{f_d*100:.1f}%")
-        c3.metric(away, f"{f_a*100:.1f}%")
+        c1.metric(home, f"{p_res[2]*100:.1f}%")
+        c2.metric("Draw", f"{p_res[1]*100:.1f}%")
+        c3.metric(away, f"{p_res[0]*100:.1f}%")
 
-        st.markdown("---") # Thick divider
-
-        # --- SECTION 2: GOALS (Forced Tablet Visibility) ---
-        # Instead of columns, we use 'success' and 'info' blocks 
-        # because they never "disappear" on mobile browsers.
+        # ⚽ Goals
         st.subheader("⚽ Goal Predictions")
-        
-        st.success(f"### 🔥 Over 2.5 Goals: **{p_o25*100:.1f}%**")
-        st.info(f"### 🎯 BTTS (Both Teams to Score): **{p_gg*100:.1f}%**")
-        
-        # Backup plain text in case the boxes glitch
-        st.write(f"**Data Summary:** O2.5 ({p_o25*100:.1f}%) | GG ({p_gg*100:.1f}%)")
+        st.success(f"**Over 2.5 Goals:** {p_o25*100:.1f}%")
+        st.info(f"**Both Teams Score (GG):** {p_gg*100:.1f}%")
+
+        # 🗞️ Live Intel (Now stays visible!)
+        st.subheader("🗞️ Real-Time Intelligence")
+        col_news1, col_news2 = st.columns(2)
+        with col_news1:
+            st.write(f"**{home} News:**")
+            for n in h_news: st.caption(f"• {n['body'][:100]}...")
+        with col_news2:
+            st.write(f"**{away} News:**")
+            for n in a_news: st.caption(f"• {n['body'][:100]}...")
+                
