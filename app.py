@@ -4,9 +4,9 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="AI Football Predictor", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Global AI Football Predictor", page_icon="⚽", layout="wide")
 st.title("⚽ Global AI Match Predictor")
-st.markdown("Select a league and input match details to get AI-backed predictions for Results and Goals.")
+st.markdown("Select a league and input match details for AI-backed Result & Goal predictions.")
 
 # --- DATA SELECTION (Aligned with your tablet file names) ---
 league_files = {
@@ -26,24 +26,37 @@ league_choice = st.sidebar.selectbox("Choose League", list(league_files.keys()))
 @st.cache_data
 def load_and_train_league(file_path):
     try:
+        # Load the CSV
         df = pd.read_csv(file_path)
-        df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors='coerce')
-        df = df.dropna(subset=["Date", "FTR"]).sort_values("Date")
         
-        # Target 1: Match Result (2=H, 1=D, 0=A)
+        # 1. Clean Column Names (Removes hidden spaces)
+        df.columns = df.columns.str.strip()
+        
+        # 2. Date and Empty Row Cleanup
+        df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors='coerce')
+        df = df.dropna(subset=["Date", "FTR", "HomeTeam", "AwayTeam"]).sort_values("Date")
+        
+        if df.empty:
+            st.error(f"No valid data found in {file_path}. Check for scores in the file.")
+            return None, None, None
+
+        # 3. Target Creation
         df["target_res"] = df.apply(lambda r: 2 if r['FTR']=='H' else (1 if r['FTR']=='D' else 0), axis=1)
-        # Target 2: Over 2.5 Goals (1=Yes, 0=No)
         df["target_o25"] = ((df["FTHG"] + df["FTAG"]) > 2.5).astype(int)
         
-        # Feature Engineering (Rolling averages)
+        # 4. Feature Engineering (Rolling averages of last 4 games)
         cols = ["FTHG", "FTAG", "HST", "AST", "HC", "AC"]
         for col in cols:
-            df[f"{col}_roll"] = df.groupby("HomeTeam")[col].transform(lambda x: x.rolling(4, closed='left').mean())
+            # Check if column exists before rolling (prevents crashes)
+            if col in df.columns:
+                df[f"{col}_roll"] = df.groupby("HomeTeam")[col].transform(lambda x: x.rolling(4, closed='left').mean())
+            else:
+                df[f"{col}_roll"] = 0 # Default to 0 if data is missing
         
-        final_df = df.dropna()
+        final_df = df.dropna(subset=["HST_roll", "AST_roll"])
         predictors = ["HST_roll", "AST_roll", "HC_roll", "AC_roll"]
         
-        # Train Models
+        # 5. Train Models
         model_res = RandomForestClassifier(n_estimators=100, random_state=42).fit(final_df[predictors], final_df["target_res"])
         model_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(final_df[predictors], final_df["target_o25"])
         
@@ -62,40 +75,53 @@ if data is not None:
     col1, col2 = st.columns(2)
     with col1:
         home = st.selectbox("🏠 Home Team", teams)
-        h_inj = st.slider(f"Key Home Absences ({home})", 0, 5, 0)
+        h_inj = st.slider(f"Key Home Players OUT ({home})", 0, 5, 0)
     with col2:
         away = st.selectbox("🚩 Away Team", teams)
-        a_inj = st.slider(f"Key Away Absences ({away})", 0, 5, 0)
+        a_inj = st.slider(f"Key Away Players OUT ({away})", 0, 5, 0)
 
     if st.button("🚀 GENERATE PREDICTION"):
-        h_latest = data[data["HomeTeam"] == home].iloc[-1]
-        a_latest = data[data["HomeTeam"] == away].iloc[-1] # Simple proxy for away form
-        
-        # Inputs for AI
-        input_data = [[h_latest["HST_roll"], a_latest["AST_roll"], h_latest["HC_roll"], a_latest["AC_roll"]]]
-        
-        # Predictions
-        p_res = rf_res.predict_proba(input_data)[0]
-        p_o25 = rf_goals.predict_proba(input_data)[0][1]
-
-        # Results Display
-        st.divider()
-        res_col1, res_col2 = st.columns(2)
-        
-        with res_col1:
-            st.subheader("Match Outcome")
-            st.write(f"🏠 **{home} Win:** {p_res[2]*100:.1f}%")
-            st.write(f"🤝 **Draw:** {p_res[1]*100:.1f}%")
-            st.write(f"🚩 **{away} Win:** {p_res[0]*100:.1f}%")
+        try:
+            h_latest = data[data["HomeTeam"] == home].iloc[-1]
+            a_latest = data[data["AwayTeam"] == away].iloc[-1]
             
-        with res_col2:
-            st.subheader("Goal Market")
-            st.write(f"⚽ **Over 2.5 Goals:** {p_o25*100:.1f}%")
-            st.write(f"🛡️ **Under 2.5 Goals:** {(1-p_o25)*100:.1f}%")
+            # Injury Adjustment Logic (-20 Elo effect per player)
+            # (In this simple version, it reduces the probability of a win)
+            
+            # Inputs for AI
+            input_data = [[h_latest["HST_roll"], a_latest["AST_roll"], h_latest["HC_roll"], a_latest["AC_roll"]]]
+            
+            # Predictions
+            p_res = rf_res.predict_proba(input_data)[0]
+            p_o25 = rf_goals.predict_proba(input_data)[0][1]
 
-        # --- FINAL VERDICT ---
-        st.info(f"**AI Recommendation:** " + 
-                ("PLAY HOME WIN" if p_res[2] > 0.65 else "PLAY OVER 2.5" if p_o25 > 0.65 else "AVOID - NO CLEAR VALUE"))
-
+            # Adjust probabilities based on injuries
+            h_win_final = max(0, p_res[2] - (h_inj * 0.05) + (a_inj * 0.05))
+            
+            # Results Display
+            st.divider()
+            res_col1, res_col2 = st.columns(2)
+            
+            with res_col1:
+                st.subheader("Match Outcome")
+                st.write(f"🏠 **{home} Win:** {h_win_final*100:.1f}%")
+                st.write(f"🤝 **Draw:** {p_res[1]*100:.1f}%")
+                st.write(f"🚩 **{away} Win:** {(1 - h_win_final - p_res[1])*100:.1f}%")
                 
+            with res_col2:
+                st.subheader("Goal Market")
+                st.write(f"⚽ **Over 2.5 Goals:** {p_o25*100:.1f}%")
+                st.write(f"🛡️ **Under 2.5 Goals:** {(1-p_o25)*100:.1f}%")
 
+            # --- FINAL VERDICT ---
+            if h_win_final > 0.65:
+                st.success(f"**AI VERDICT:** 🟢 PLAY {home} WIN")
+            elif p_o25 > 0.65:
+                st.success(f"**AI VERDICT:** ⚽ PLAY OVER 2.5 GOALS")
+            elif h_win_final < 0.35 and p_res[0] > 0.40:
+                st.warning(f"**AI VERDICT:** 🚩 PLAY {away} DOUBLE CHANCE")
+            else:
+                st.info("**AI VERDICT:** ⚪ AVOID - High Uncertainty")
+        except:
+            st.error("Not enough recent data for these specific teams. Try another matchup.")
+            
