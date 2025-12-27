@@ -18,7 +18,6 @@ def get_team_news(team_name):
     except: return []
 
 def calculate_h2h_boost(df, home, away):
-    """Checks the last 3 direct meetings. Returns a 10% swing for the dominant side."""
     h2h = df[((df['HomeTeam'] == home) & (df['AwayTeam'] == away)) | 
              ((df['HomeTeam'] == away) & (df['AwayTeam'] == home))].tail(3)
     if len(h2h) < 1: return 0
@@ -27,11 +26,10 @@ def calculate_h2h_boost(df, home, away):
     return 0.10 if home_wins >= 2 else (-0.10 if len(h2h) - home_wins >= 2 else 0)
 
 def get_defensive_leak(df, team):
-    """Calculates if a team is 'leaky' based on last 4 games."""
     recent = df[(df['HomeTeam'] == team) | (df['AwayTeam'] == team)].tail(4)
     leaks = len(recent[((recent['HomeTeam'] == team) & (recent['FTAG'] > 0)) | 
                        ((recent['AwayTeam'] == team) & (recent['FTHG'] > 0))])
-    return leaks * 0.05  # Up to +20% boost to GG probability
+    return leaks * 0.05 
 
 # --- DATA FEED ---
 league_files = {
@@ -53,19 +51,14 @@ def load_and_train(url):
         df.columns = df.columns.str.strip()
         df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors='coerce')
         df = df.dropna(subset=["FTR", "HomeTeam", "AwayTeam"]).sort_values("Date")
-        
-        # Targets
         df["target_res"] = df.apply(lambda r: 2 if r['FTR']=='H' else (1 if r['FTR']=='D' else 0), axis=1)
         df["target_o25"] = ((df["FTHG"] + df["FTAG"]) > 2.5).astype(int)
         df["target_gg"] = ((df["FTHG"] > 0) & (df["FTAG"] > 0)).astype(int)
-        
-        # Features
         essential = ["FTHG", "FTAG", "HST", "AST", "HC", "AC"]
         available = [c for c in essential if c in df.columns]
         for c in available:
             df[f"{c}_roll"] = df.groupby("HomeTeam")[c].transform(lambda x: x.rolling(4, closed='left').mean())
             df[f"{c}_roll"] = df[f"{c}_roll"].fillna(df[c].mean())
-        
         preds = [f"{c}_roll" for c in available]
         m_res = RandomForestClassifier(n_estimators=100).fit(df[preds], df["target_res"])
         m_goals = RandomForestClassifier(n_estimators=100).fit(df[preds], df["target_o25"])
@@ -81,54 +74,52 @@ if data is not None:
     col1, col2 = st.columns(2)
     
     with col1:
-        home = st.selectbox("🏠 Home Team", teams)
+        home = st.selectbox("🏠 Home Team", teams, index=0)
+        # Unique news fetch
         for n in get_team_news(home): st.caption(f"📰 {n['title'][:80]}...")
-        h_inj = st.slider(f"Key Absences ({home})", 0, 5, 0)
+        # FIX: Added unique 'key' to avoid Duplicate Element ID
+        h_inj = st.slider(f"Key Absences ({home})", 0, 5, 0, key="home_slider")
         
     with col2:
-        away = st.selectbox("🚩 Away Team", teams)
+        # Default Away to second team to avoid crash on start
+        away = st.selectbox("🚩 Away Team", teams, index=1 if len(teams) > 1 else 0)
         for n in get_team_news(away): st.caption(f"📰 {n['title'][:80]}...")
-        a_inj = st.slider(f"Key Absences ({away})", 0, 5, 0)
+        # FIX: Added unique 'key' to avoid Duplicate Element ID
+        a_inj = st.slider(f"Key Absences ({away})", 0, 5, 0, key="away_slider")
 
-    if st.button("🚀 GENERATE PREDICTION"):
+    if home == away:
+        st.warning("⚠️ Please select two different teams for a valid prediction.")
+
+    if st.button("🚀 GENERATE PREDICTION") and home != away:
         h_latest = data[data["HomeTeam"] == home].iloc[-1]
         a_latest = data[data["AwayTeam"] == away].iloc[-1]
         input_feats = [[h_latest[p] for p in predictors]]
         
-        # 1. Base AI Logic
         p_res = rf_res.predict_proba(input_feats)[0]
         p_o25 = rf_goals.predict_proba(input_feats)[0][1]
         p_gg = rf_gg.predict_proba(input_feats)[0][1]
 
-        # 2. H2H and Defensive Leak Adjustments
         h2h_swing = calculate_h2h_boost(data, home, away)
         h_leak = get_defensive_leak(data, home)
         a_leak = get_defensive_leak(data, away)
 
-        # 3. Final Probability Calculation (10% Penalty per Absence)
+        # 10% penalty per player
         h_win_adj = max(0, min(1, p_res[2] - (h_inj * 0.10) + (a_inj * 0.10) + h2h_swing))
         a_win_adj = max(0, min(1, p_res[0] - (a_inj * 0.10) + (h_inj * 0.10) - h2h_swing))
-        draw_adj = 1 - h_win_adj - a_win_adj
+        draw_adj = max(0, 1 - h_win_adj - a_win_adj)
         
-        # GG Boost based on defensive leaks
         gg_final = max(0, min(1, p_gg + h_leak + a_leak))
 
-        # UI Results
         st.divider()
         r1, r2, r3 = st.columns(3)
         r1.metric(f"🏠 {home} Win", f"{h_win_adj*100:.1f}%")
         r1.write(f"🚩 {away} Win: {a_win_adj*100:.1f}%")
-        
         r2.metric("⚽ Over 2.5 Goals", f"{p_o25*100:.1f}%")
-        r2.write(f"🛡️ Under 2.5: {(1-p_o25)*100:.1f}%")
-        
         r3.metric("🔥 GG (BTTS)", f"{gg_final*100:.1f}%")
-        r3.write(f"🔒 NG: {(1-gg_final)*100:.1f}%")
 
         st.divider()
         if h_win_adj > 0.60: st.success(f"TIP: {home} Win")
         elif a_win_adj > 0.60: st.success(f"TIP: {away} Win")
         elif gg_final > 0.70: st.success("TIP: Both Teams to Score (GG)")
-        elif p_o25 > 0.70: st.success("TIP: Over 2.5 Goals")
         else: st.info("TIP: No clear value found.")
-            
+
