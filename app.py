@@ -70,37 +70,36 @@ if data is not None:
         a_abs = st.slider(f"Absences ({away})", 0, 5, 0)
 
     if st.button("🚀 RUN FULL PREDICTION"):
-        # 1. Get the data for the last match to use as AI input
-        h_row = data[data["HomeTeam"] == home].iloc[-1]
-        input_feats = [[h_row[p] for p in predictors]]
+        # Version Check (So you know it's the new code)
+        st.sidebar.caption("App Version: 2.0 (Tablet Optimized)")
         
-        # 2. Run all AI models
-        p_res = rf_res.predict_proba(input_feats)[0]
-        p_o25 = rf_goal.predict_proba(input_feats)[0][1]
-        p_gg = rf_gg.predict_proba(input_feats)[0][1]
+        h_row = data[data["HomeTeam"] == home].iloc[-1]
+        p_res = rf_res.predict_proba([[h_row[p] for p in predictors]])[0]
+        p_o25 = rf_goal.predict_proba([[h_row[p] for p in predictors]])[0][1]
+        p_gg = rf_gg.predict_proba([[h_row[p] for p in predictors]])[0][1]
 
-        # 3. Apply the 10% Absence Adjustment
+        # 10% Absence Adjustment
         f_h = max(0, min(1, p_res[2] - (h_abs * 0.10) + (a_abs * 0.10)))
         f_a = max(0, min(1, p_res[0] - (a_abs * 0.10) + (h_abs * 0.10)))
         f_d = max(0, 1 - f_h - f_a)
 
-        st.divider()
-        
-        # --- SECTION 1: WIN/DRAW/LOSS ---
-        st.header("🏆 Match Winner AI")
+        # --- SECTION 1: WINNER (Big Metrics) ---
+        st.subheader("🏆 Win Probability")
+        # We use columns here, but on tablets, these will stack vertically
         c1, c2, c3 = st.columns(3)
-        c1.metric(f"{home} Win", f"{f_h*100:.1f}%")
+        c1.metric(home, f"{f_h*100:.1f}%")
         c2.metric("Draw", f"{f_d*100:.1f}%")
-        c3.metric(f"{away} Win", f"{f_a*100:.1f}%")
+        c3.metric(away, f"{f_a*100:.1f}%")
 
-        # --- SECTION 2: GOALS (FORCED VISIBILITY) ---
-        st.write("---")
-        st.header("⚽ Goals & BTTS Analysis")
+        st.markdown("---") # Thick divider
+
+        # --- SECTION 2: GOALS (Forced Tablet Visibility) ---
+        # Instead of columns, we use 'success' and 'info' blocks 
+        # because they never "disappear" on mobile browsers.
+        st.subheader("⚽ Goal Predictions")
         
-        # We use a colorful box here to make sure it shows up
-        st.success(f"**Over 2.5 Goals Probability:** {p_o25*100:.1f}%")
-        st.info(f"**Both Teams to Score (GG) Probability:** {p_gg*100:.1f}%")
+        st.success(f"### 🔥 Over 2.5 Goals: **{p_o25*100:.1f}%**")
+        st.info(f"### 🎯 BTTS (Both Teams to Score): **{p_gg*100:.1f}%**")
         
-        # Additional backup display
-        st.write(f"### 🔥 AI Over 2.5 Prediction: {p_o25*100:.1f}%")
-        st.write(f"### 🎯 AI BTTS Prediction: {p_gg*100:.1f}%")
+        # Backup plain text in case the boxes glitch
+        st.write(f"**Data Summary:** O2.5 ({p_o25*100:.1f}%) | GG ({p_gg*100:.1f}%)")
