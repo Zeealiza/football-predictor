@@ -4,6 +4,8 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from duckduckgo_search import DDGS
 from datetime import datetime
+st.cache_data.clear()
+
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="AI Match Master Pro", page_icon="⚽", layout="wide")
@@ -68,27 +70,37 @@ if data is not None:
         a_abs = st.slider(f"Absences ({away})", 0, 5, 0)
 
     if st.button("🚀 RUN FULL PREDICTION"):
+        # 1. Get the data for the last match to use as AI input
         h_row = data[data["HomeTeam"] == home].iloc[-1]
-        p_res = rf_res.predict_proba([[h_row[p] for p in predictors]])[0]
-        p_o25 = rf_goal.predict_proba([[h_row[p] for p in predictors]])[0][1]
-        p_gg = rf_gg.predict_proba([[h_row[p] for p in predictors]])[0][1]
+        input_feats = [[h_row[p] for p in predictors]]
+        
+        # 2. Run all AI models
+        p_res = rf_res.predict_proba(input_feats)[0]
+        p_o25 = rf_goal.predict_proba(input_feats)[0][1]
+        p_gg = rf_gg.predict_proba(input_feats)[0][1]
 
-        # 10% Absence Adjustment
+        # 3. Apply the 10% Absence Adjustment
         f_h = max(0, min(1, p_res[2] - (h_abs * 0.10) + (a_abs * 0.10)))
         f_a = max(0, min(1, p_res[0] - (a_abs * 0.10) + (h_abs * 0.10)))
         f_d = max(0, 1 - f_h - f_a)
 
         st.divider()
-        # Row 1: Match Result (Win/Draw/Loss)
-        st.subheader("Match Outcome Probability")
-        res_cols = st.columns(3)
-        res_cols[0].metric(f"{home} Win", f"{f_h*100:.1f}%")
-        res_cols[1].metric("Draw", f"{f_d*100:.1f}%")
-        res_cols[2].metric(f"{away} Win", f"{f_a*100:.1f}%")
-
-        # Row 2: Goals Prediction
-        st.subheader("Goals & BTTS")
-        goal_cols = st.columns(2)
-        goal_cols[0].metric("Over 2.5 Goals", f"{p_o25*100:.1f}%")
-        goal_cols[1].metric("Both Teams to Score (GG)", f"{p_gg*100:.1f}%")
         
+        # --- SECTION 1: WIN/DRAW/LOSS ---
+        st.header("🏆 Match Winner AI")
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"{home} Win", f"{f_h*100:.1f}%")
+        c2.metric("Draw", f"{f_d*100:.1f}%")
+        c3.metric(f"{away} Win", f"{f_a*100:.1f}%")
+
+        # --- SECTION 2: GOALS (FORCED VISIBILITY) ---
+        st.write("---")
+        st.header("⚽ Goals & BTTS Analysis")
+        
+        # We use a colorful box here to make sure it shows up
+        st.success(f"**Over 2.5 Goals Probability:** {p_o25*100:.1f}%")
+        st.info(f"**Both Teams to Score (GG) Probability:** {p_gg*100:.1f}%")
+        
+        # Additional backup display
+        st.write(f"### 🔥 AI Over 2.5 Prediction: {p_o25*100:.1f}%")
+        st.write(f"### 🎯 AI BTTS Prediction: {p_gg*100:.1f}%")
