@@ -50,7 +50,7 @@ def add_features(df):
 
     # Rolling goals
     for g in ["FTHG", "FTAG"]:
-        df[f"{g}_roll"] = df.groupby("HomeTeam")[g]\
+        df[f"{s}_roll" if 's' in locals() else f"{g}_roll"] = df.groupby("HomeTeam")[g]\
             .transform(lambda x: x.rolling(5, closed="left").mean().fillna(x.mean()))
 
     # Form
@@ -188,12 +188,31 @@ if st.button("🚀 RUN AI PREDICTION"):
     st.success(f"Over 2.5 Goals: {p_o25*100:.1f}%")
     st.info(f"BTTS: {p_gg*100:.1f}%")
 
-    # FINAL VERDICT
+    # --------------------------------------------------
+    # FINAL VERDICT (NEW SECTION)
+    # --------------------------------------------------
     st.divider()
-    outcome = home if home_p > max(away_p, draw_p) else away if away_p > draw_p else "Draw"
-    confidence = max(home_p, away_p, draw_p)
+    st.header("🧠 AI Final Verdict")
+    
+    # Logic to determine verdict text
+    if home_p > away_p and home_p > draw_p:
+        outcome = home
+        verdict_text = f"The XGBoost model shows a statistical bias toward a **{home} victory**."
+    elif away_p > home_p and away_p > draw_p:
+        outcome = away
+        verdict_text = f"The model identifies **{away}** as the superior side for this matchup."
+    else:
+        outcome = "Draw"
+        verdict_text = "Analysis suggests a high probability of a **tactical stalemate**."
 
-    st.warning(f"🧠 AI PICK: **{outcome}** ({confidence*100:.1f}% confidence)")
+    confidence = max(home_p, away_p, draw_p)
+    conf_label = "HIGH" if confidence > 0.6 else "MODERATE" if confidence > 0.4 else "LOW"
+
+    # Goal context logic
+    goal_context = "with high expectations for a high-scoring game." if p_o25 > 0.65 else "likely to be a defensive, low-scoring affair."
+
+    st.warning(f"### **{conf_label} CONFIDENCE PICK: {outcome}**")
+    st.write(f"{verdict_text} The match is {goal_context}")
 
     # LIVE INTEL
     st.subheader("🗞️ Team News")
@@ -201,3 +220,4 @@ if st.button("🚀 RUN AI PREDICTION"):
         st.caption(f"{home}: {n['body'][:120]}...")
     for n in get_intel(away):
         st.caption(f"{away}: {n['body'][:120]}...")
+    
