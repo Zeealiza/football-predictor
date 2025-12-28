@@ -37,21 +37,16 @@ def load_and_train(url):
     except Exception as e:
         return None, None, None, None, None
 
-# --- 2. GLOBAL LEAGUE REPOSITORY ---
+# --- 2. DATA REPOSITORY ---
 BASE_MAIN = "https://www.football-data.co.uk/mmz4281/2526/"
 BASE_EXTRA = "https://www.football-data.co.uk/new_leagues/"
 
 league_urls = {
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿 England: Premier League": f"{BASE_MAIN}E0.csv",
-    "🏴󠁧󠁢󠁥󠁮󠁧󠁿 England: Championship": f"{BASE_MAIN}E1.csv",
     "🇪🇸 Spain: La Liga": f"{BASE_MAIN}SP1.csv",
-    "🇪🇸 Spain: Segunda": f"{BASE_MAIN}SP2.csv",
     "🇩🇪 Germany: Bundesliga": f"{BASE_MAIN}D1.csv",
-    "🇩🇪 Germany: 2. Bundesliga": f"{BASE_MAIN}D2.csv",
     "🇮🇹 Italy: Serie A": f"{BASE_MAIN}I1.csv",
-    "🇮🇹 Italy: Serie B": f"{BASE_MAIN}I2.csv",
     "🇫🇷 France: Ligue 1": f"{BASE_MAIN}F1.csv",
-    "🇫🇷 France: Ligue 2": f"{BASE_MAIN}F2.csv",
     "🇳🇱 Netherlands: Eredivisie": f"{BASE_MAIN}N1.csv",
     "🇧🇪 Belgium: Pro League": f"{BASE_MAIN}B1.csv",
     "🇵🇹 Portugal: Liga Portugal": f"{BASE_MAIN}P1.csv",
@@ -60,8 +55,7 @@ league_urls = {
     "🇨🇭 Switzerland: Super League": f"{BASE_EXTRA}SWZ.csv",
     "🇬🇷 Greece: Super League": f"{BASE_EXTRA}GREECE.csv",
     "🇹🇷 Turkey: Süper Lig": f"{BASE_EXTRA}TUR.csv",
-    "🇩🇰 Denmark: Superliga": f"{BASE_EXTRA}DNK.csv",
-    "🇧🇷 Brazil: Serie A": f"{BASE_EXTRA}BRA.csv"
+    "🇩🇰 Denmark: Superliga": f"{BASE_EXTRA}DNK.csv"
 }
 
 # --- 3. UI DASHBOARD ---
@@ -114,3 +108,4 @@ if data is not None:
 else:
     st.error("Select a league from the sidebar to begin.")
     
+
