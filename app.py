@@ -4,14 +4,48 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from duckduckgo_search import DDGS
 from datetime import datetime
-st.cache_data.clear()
-
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="AI Match Master Pro", page_icon="⚽", layout="wide")
 st.title("⚽ AI Pro Match Predictor: Win/Loss & Goals")
 
-# --- DATA REPOSITORY (VERIFIED 25/26) ---
+# --- 1. DEFINE FUNCTIONS (Must be at the top) ---
+
+def get_intel(team, mode="news"):
+    """Fetches real-time team news or starting lineups"""
+    try:
+        with DDGS() as ddgs:
+            # Query varies based on the mode requested
+            query = f"{team} starting lineup today" if mode == "lineup" else f"{team} team news injuries"
+            results = list(ddgs.text(query, max_results=2))
+            return results if results else [{"body": "No recent live updates found."}]
+    except Exception:
+        return [{"body": "Live intel service temporarily unavailable."}]
+
+@st.cache_data(ttl=3600)
+def load_and_train(url):
+    try:
+        df = pd.read_csv(url, storage_options={'User-Agent': 'Mozilla/5.0'})
+        df.columns = df.columns.str.strip()
+        df = df.dropna(subset=["FTR", "HomeTeam", "AwayTeam"])
+        
+        # Targets
+        df["target_res"] = df['FTR'].map({'H': 2, 'D': 1, 'A': 0})
+        df["target_o25"] = ((df["FTHG"] + df["FTAG"]) > 2.5).astype(int)
+        df["target_gg"] = ((df["FTHG"] > 0) & (df["FTAG"] > 0)).astype(int)
+        
+        for s in ["FTHG", "FTAG"]:
+            df[f"{s}_roll"] = df.groupby("HomeTeam")[s].transform(lambda x: x.rolling(4, closed='left').mean().fillna(x.mean()))
+        
+        feats = ["FTHG_roll", "FTAG_roll"]
+        m_res = RandomForestClassifier(n_estimators=100).fit(df[feats], df["target_res"])
+        m_goal = RandomForestClassifier(n_estimators=100).fit(df[feats], df["target_o25"])
+        m_gg = RandomForestClassifier(n_estimators=100).fit(df[feats], df["target_gg"])
+        return df, m_res, m_goal, m_gg, feats
+    except:
+        return None, None, None, None, None
+
+# --- 2. DATA REPOSITORY ---
 BASE_MAIN = "https://www.football-data.co.uk/mmz4281/2526/"
 BASE_EXTRA = "https://www.football-data.co.uk/new_leagues/"
 
@@ -32,30 +66,7 @@ league_urls = {
     "🇩🇰 Denmark: Superliga": f"{BASE_EXTRA}DNK.csv"
 }
 
-# --- CORE ENGINE ---
-@st.cache_data(ttl=3600)
-def load_and_train(url):
-    try:
-        df = pd.read_csv(url, storage_options={'User-Agent': 'Mozilla/5.0'})
-        df.columns = df.columns.str.strip()
-        df = df.dropna(subset=["FTR", "HomeTeam", "AwayTeam"])
-        
-        # Binary Targets for Goals
-        df["target_res"] = df['FTR'].map({'H': 2, 'D': 1, 'A': 0})
-        df["target_o25"] = ((df["FTHG"] + df["FTAG"]) > 2.5).astype(int)
-        df["target_gg"] = ((df["FTHG"] > 0) & (df["FTAG"] > 0)).astype(int)
-        
-        for s in ["FTHG", "FTAG"]:
-            df[f"{s}_roll"] = df.groupby("HomeTeam")[s].transform(lambda x: x.rolling(4, closed='left').mean().fillna(x.mean()))
-        
-        feats = ["FTHG_roll", "FTAG_roll"]
-        m_res = RandomForestClassifier(n_estimators=100).fit(df[feats], df["target_res"])
-        m_goal = RandomForestClassifier(n_estimators=100).fit(df[feats], df["target_o25"])
-        m_gg = RandomForestClassifier(n_estimators=100).fit(df[feats], df["target_gg"])
-        return df, m_res, m_goal, m_gg, feats
-    except: return None, None, None, None, None
-
-# --- UI INTERFACE ---
+# --- 3. UI LAYOUT ---
 sel_league = st.sidebar.selectbox("Competition", list(league_urls.keys()))
 data, rf_res, rf_goal, rf_gg, predictors = load_and_train(league_urls[sel_league])
 
@@ -69,44 +80,42 @@ if data is not None:
         away = st.selectbox("🚩 Away Team", teams, index=1 if len(teams)>1 else 0)
         a_abs = st.slider(f"Absences ({away})", 0, 5, 0)
 
-        # ... (Your Data Loading Code stays the same) ...
-
     if st.button("🚀 RUN FULL PREDICTION"):
-        # 1. Fetch AI Predictions (Goals & Result)
+        # 1. AI Logic
         h_row = data[data["HomeTeam"] == home].iloc[-1]
         p_res = rf_res.predict_proba([[h_row[p] for p in predictors]])[0]
         p_o25 = rf_goal.predict_proba([[h_row[p] for p in predictors]])[0][1]
         p_gg = rf_gg.predict_proba([[h_row[p] for p in predictors]])[0][1]
 
-        # 2. Fetch Live Intel (Lineups & News) - MOVING THIS INSIDE THE BUTTON
-        with st.spinner("Fetching Live Lineups & News..."):
+        # 2. Live Intel (Now defined and called inside button)
+        with st.spinner("Analyzing news and lineups..."):
             h_news = get_intel(home)
             a_news = get_intel(away)
-            h_lineup = get_intel(home, mode="lineup")
-            a_lineup = get_intel(away, mode="lineup")
 
-        # --- DISPLAY SECTION (Tablet Optimized) ---
+        # 3. Adjust for Absences
+        f_h = max(0, min(1, p_res[2] - (h_abs * 0.10) + (a_abs * 0.10)))
+        f_a = max(0, min(1, p_res[0] - (a_abs * 0.10) + (h_abs * 0.10)))
+        f_d = max(0, 1 - f_h - f_a)
+
+        # --- TABLET DISPLAY ---
         st.divider()
-        
-        # 🏆 Result
         st.subheader("🏆 Match Winner AI")
-        c1, c2, c3 = st.columns(3)
-        c1.metric(home, f"{p_res[2]*100:.1f}%")
-        c2.metric("Draw", f"{p_res[1]*100:.1f}%")
-        c3.metric(away, f"{p_res[0]*100:.1f}%")
+        res_cols = st.columns(3)
+        res_cols[0].metric(f"{home} Win", f"{f_h*100:.1f}%")
+        res_cols[1].metric("Draw", f"{f_d*100:.1f}%")
+        res_cols[2].metric(f"{away} Win", f"{f_a*100:.1f}%")
 
-        # ⚽ Goals
-        st.subheader("⚽ Goal Predictions")
-        st.success(f"**Over 2.5 Goals:** {p_o25*100:.1f}%")
-        st.info(f"**Both Teams Score (GG):** {p_gg*100:.1f}%")
+        st.subheader("⚽ Goals & BTTS")
+        g_col1, g_col2 = st.columns(2)
+        g_col1.success(f"**Over 2.5 Goals:** {p_o25*100:.1f}%")
+        g_col2.info(f"**BTTS (Both Teams to Score):** {p_gg*100:.1f}%")
 
-        # 🗞️ Live Intel (Now stays visible!)
         st.subheader("🗞️ Real-Time Intelligence")
-        col_news1, col_news2 = st.columns(2)
-        with col_news1:
+        n_col1, n_col2 = st.columns(2)
+        with n_col1:
             st.write(f"**{home} News:**")
-            for n in h_news: st.caption(f"• {n['body'][:100]}...")
-        with col_news2:
+            for n in h_news: st.caption(f"• {n['body'][:120]}...")
+        with n_col2:
             st.write(f"**{away} News:**")
-            for n in a_news: st.caption(f"• {n['body'][:100]}...")
+            for n in a_news: st.caption(f"• {n['body'][:120]}...")
                 
