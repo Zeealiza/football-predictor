@@ -110,6 +110,32 @@ if data is not None:
         g_col1.success(f"**Over 2.5 Goals:** {p_o25*100:.1f}%")
         g_col2.info(f"**BTTS (Both Teams to Score):** {p_gg*100:.1f}%")
 
+        # --- FINAL AI VERDICT BLOCK (NEW) ---
+        st.divider()
+        st.header("🧠 AI Final Verdict")
+        
+        # Determination of result and confidence
+        top_prob = max(f_h, f_a, f_d)
+        if top_prob == f_h:
+            outcome = home
+            conf_level = "High" if f_h > 0.60 else "Moderate"
+            advice = f"Strong statistical bias for a {home} victory."
+        elif top_prob == f_a:
+            outcome = away
+            conf_level = "High" if f_a > 0.60 else "Moderate"
+            advice = f"Statistical advantage lies with {away}."
+        else:
+            outcome = "Draw"
+            conf_level = "Moderate"
+            advice = "High parity between teams suggests a stalemate."
+
+        # Goal Context
+        goal_advice = "Expect a high-scoring encounter." if p_o25 > 0.65 else "Anticipate a tight, low-scoring game."
+        
+        # Display Verdict
+        st.warning(f"**Main Prediction:** {outcome} ({conf_level} Confidence)")
+        st.markdown(f"**Strategic Insight:** {advice} {goal_advice}")
+
         st.subheader("🗞️ Real-Time Intelligence")
         n_col1, n_col2 = st.columns(2)
         with n_col1:
@@ -118,4 +144,4 @@ if data is not None:
         with n_col2:
             st.write(f"**{away} News:**")
             for n in a_news: st.caption(f"• {n['body'][:120]}...")
-                
+        
