@@ -5,13 +5,12 @@ from sklearn.ensemble import RandomForestClassifier
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="AI Match Master Pro", page_icon="⚽", layout="wide")
-st.title("⚽ AI Pro Match Predictor: Win/Loss & Goals")
+st.title("⚽ AI Pro Match Predictor: Full League Access")
 
 # --- 1. OPTIMIZED ENGINE ---
 
 @st.cache_data(ttl=3600)
 def load_and_train(url):
-    """Downloads data and trains the AI models with safe parameters for cloud deployment"""
     try:
         df = pd.read_csv(url, storage_options={'User-Agent': 'Mozilla/5.0'})
         df.columns = df.columns.str.strip()
@@ -22,22 +21,21 @@ def load_and_train(url):
         df["target_o25"] = ((df["FTHG"] + df["FTAG"]) > 2.5).astype(int)
         df["target_gg"] = ((df["FTHG"] > 0) & (df["FTAG"] > 0)).astype(int)
         
-        # Rolling averages
+        # Rolling averages (Last 5 games)
         for s in ["FTHG", "FTAG"]:
             df[f"{s}_roll"] = df.groupby("HomeTeam")[s].transform(
-                lambda x: x.rolling(4, closed='left').mean().fillna(x.mean())
+                lambda x: x.rolling(5, closed='left').mean().fillna(x.mean())
             )
         
         feats = ["FTHG_roll", "FTAG_roll"]
-        # Max depth restricted to save RAM
         m_res = RandomForestClassifier(n_estimators=100, max_depth=5).fit(df[feats], df["target_res"])
         m_goal = RandomForestClassifier(n_estimators=100, max_depth=5).fit(df[feats], df["target_o25"])
         m_gg = RandomForestClassifier(n_estimators=100, max_depth=5).fit(df[feats], df["target_gg"])
         return df, m_res, m_goal, m_gg, feats
-    except Exception as e:
+    except:
         return None, None, None, None, None
 
-# --- 2. DATA REPOSITORY ---
+# --- 2. COMPLETE DATA REPOSITORY ---
 BASE_MAIN = "https://www.football-data.co.uk/mmz4281/2526/"
 BASE_EXTRA = "https://www.football-data.co.uk/new_leagues/"
 
@@ -58,6 +56,7 @@ league_urls = {
     "🇩🇰 Denmark: Superliga": f"{BASE_EXTRA}DNK.csv"
 }
 
+
 # --- 3. UI DASHBOARD ---
 sel_league = st.sidebar.selectbox("Select Competition", list(league_urls.keys()))
 data, rf_res, rf_goal, rf_gg, predictors = load_and_train(league_urls[sel_league])
@@ -67,25 +66,32 @@ if data is not None:
     c1, c2 = st.columns(2)
     with c1:
         home = st.selectbox("🏠 Home Team", teams, index=0)
-        h_abs = st.slider(f"Absences ({home})", 0, 5, 0)
     with c2:
         away = st.selectbox("🚩 Away Team", teams, index=min(1, len(teams)-1))
-        a_abs = st.slider(f"Absences ({away})", 0, 5, 0)
 
     if st.button("🚀 RUN AI PREDICTION"):
-        # Prediction Logic
         h_row = data[data["HomeTeam"] == home].iloc[-1]
+        a_row = data[data["HomeTeam"] == away].iloc[-1]
+        
         p_res = rf_res.predict_proba([[h_row[p] for p in predictors]])[0]
         p_o25 = rf_goal.predict_proba([[h_row[p] for p in predictors]])[0][1]
         p_gg = rf_gg.predict_proba([[h_row[p] for p in predictors]])[0][1]
 
-        # Absence Adjustment (0.10 shift per player)
-        f_h = max(0, min(1, p_res[2] - (h_abs * 0.10) + (a_abs * 0.10)))
-        f_a = max(0, min(1, p_res[0] - (a_abs * 0.10) + (h_abs * 0.10)))
+        # --- CORRECTED FORM-BASED HOME ADVANTAGE ---
+        a_form = a_row["FTHG_roll"]  # Scored goals in last 5
+        
+        # If Away Team in Top Form (>1.8 goals/avg), nullify standard home weight
+        ha_weight = 0.12 if a_form < 1.8 else 0.02
+        
+        f_h = max(0, min(1, p_res[2] - ha_weight))
+        f_a = max(0, min(1, p_res[0] + (ha_weight if a_form > 1.8 else 0)))
         f_d = max(0, 1 - f_h - f_a)
 
         # RESULTS DISPLAY
         st.divider()
+        if a_form > 1.8:
+            st.info(f"🔥 **Elite Form Detected for {away}:** Home advantage has been neutralized.")
+            
         st.subheader("📊 Match Probabilities")
         r1, r2, r3 = st.columns(3)
         r1.metric(f"{home} Win", f"{f_h*100:.1f}%")
@@ -102,10 +108,7 @@ if data is not None:
         st.header("🧠 AI Final Verdict")
         top_prob = max(f_h, f_a, f_d)
         outcome = home if top_prob == f_h else away if top_prob == f_a else "Draw"
-        
-        st.warning(f"**Best Bet:** {outcome} ({'High' if top_prob > 0.6 else 'Moderate'} Confidence)")
-        st.info(f"**Goal Strategy:** {'Expect goals' if p_o25 > 0.65 else 'Tight defensive game expected'}.")
+        st.warning(f"**Main Selection:** {outcome} ({'High' if top_prob > 0.6 else 'Moderate'} Confidence)")
 else:
     st.error("Select a league from the sidebar to begin.")
     
-
