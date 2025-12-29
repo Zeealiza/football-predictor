@@ -126,17 +126,24 @@ if st.button("🚀 RUN FULL ANALYSIS"):
     g2.write(f"**Under 2.5:** {(1-p_goal)*100:.1f}%")
     g2.progress(1-p_goal)
 
-    with st.expander("🛡️ Strategic Insights, Traps & H2H"):
-        st.info(f"💡 **Double Chance 1X:** {(f_h+f_d)*100:.1f}% | **Double Chance X2:** {(f_a+f_d)*100:.1f}%")
-        
-        # ODD EFFECT (The Trap Detector)
-        imp_h = 1 / h_odd
-        if f_h - imp_h > 0.18: st.success("💎 VALUE: AI sees high potential for Home Win compared to Odd.")
-        elif imp_h - f_h > 0.22: st.error("🚨 SPORTY TRAP: Odds are low, but AI stats say Home team is risky.")
-        
-        if not h2h.empty:
-            st.write("**Recent Head-to-Head Scores:**")
-            st.table(h2h.tail(3)[['Date', 'HomeTeam', 'FTHG', 'FTAG', 'AwayTeam']])
+    # --- REPLACE YOUR EXPANDER SECTION WITH THIS ---
+with st.expander("🛡️ Strategic Insights, Traps & H2H"):
+    st.info(f"💡 **Double Chance 1X:** {(f_h+f_d)*100:.1f}% | **Double Chance X2:** {(f_a+f_d)*100:.1f}%")
     
-    clear_ram()
+    # ODD EFFECT (The Trap Detector)
+    imp_h = 1 / h_odd
+    if f_h - imp_h > 0.18: 
+        st.success("💎 VALUE: AI sees high potential for Home Win compared to Odd.")
+    elif imp_h - f_h > 0.22: 
+        st.error("🚨 SPORTY TRAP: Odds are low, but AI stats say Home team is risky.")
     
+    # NEW FULL-VIEW H2H TABLE
+    if not h2h.empty:
+        st.write("**Full Recent Head-to-Head History:**")
+        # 'height=None' or 'height="content"' ensures all rows are shown without cutting off
+        st.dataframe(
+            h2h.tail(10)[['Date', 'HomeTeam', 'FTHG', 'FTAG', 'AwayTeam']], 
+            use_container_width=True, 
+            height=None 
+        )
+
