@@ -1,0 +1,15 @@
+[server]
+# Prevents the server from keeping too much in the websocket buffer
+maxMessageSize = 50
+# Lowering this helps avoid memory spikes during data loading
+maxUploadSize = 10
+# Disables file watching to save CPU/RAM cycles
+fileWatcherType = "none"
+
+[client]
+# Prevents memory-heavy tracebacks from being rendered in the browser
+showErrorDetails = false
+
+[runner]
+# Forces Python to clean up memory immediately after a script run
+postScriptGC = true
