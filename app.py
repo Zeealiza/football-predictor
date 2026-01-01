@@ -72,7 +72,12 @@ def get_model(url, m_type):
     with open(f"models/{code}_{m_type}.pkl", "rb") as f:
         return pickle.load(f)
 
-# --- 3. UI ---
+
+# --- 4. ANALYSIS ---
+if st.button("🚀 RUN SMART ANALYSIS"):
+    h_row = df[df["HomeTeam"] == h_team].iloc[-1]
+    a_row = df[df["AwayTeam"] == a_team].iloc[-1# --- 3. UI ---
+# We move these up so the sidebar knows the 'df' content immediately
 sel_league = st.sidebar.selectbox("Competition", list(LEAGUES.keys()))
 df = load_data(LEAGUES[sel_league])
 train_models(LEAGUES[sel_league], df)
@@ -89,12 +94,25 @@ def get_form_str(team):
         else: f.append("❌")
     return "".join(f)
 
+# Organized Sidebar
 with st.sidebar:
     st.divider()
-    st.info(f"📅 Last Data Update: {df['Date'].iloc[-1]}")
-    st.write("**Recent Team Form**")
-    for t in teams: st.caption(f"{get_form_str(t)} {t}")
+    
+    # FEATURE: Data Freshness (Moved to top of sidebar for visibility)
+    last_date = df['Date'].iloc[-1]
+    st.info(f"📅 **Data updated up to:** {last_date}")
+    
+    # FEATURE: Force Refresh (Ensures you can manually update if site has new games)
+    if st.button("🔄 Force Refresh Data"):
+        st.cache_data.clear()
+        get_model.clear()
+        st.rerun()
 
+    st.write("**Recent Team Form**")
+    for t in teams: 
+        st.caption(f"{get_form_str(t)} {t}")
+
+# Main Selection Area (Features preserved)
 c1, c2 = st.columns(2)
 with c1:
     h_team = st.selectbox("🏠 Home Team", teams)
@@ -104,11 +122,7 @@ with c2:
     a_team = st.selectbox("🚩 Away Team", teams, index=1)
     a_odd = st.number_input(f"Sporty Odd: {a_team}", 1.01, 50.0, 3.50)
     a_missing = st.multiselect(f"Missing Players ({a_team})", ["Star Striker", "Key Playmaker", "Main Defender"], max_selections=3)
-
-# --- 4. ANALYSIS ---
-if st.button("🚀 RUN SMART ANALYSIS"):
-    h_row = df[df["HomeTeam"] == h_team].iloc[-1]
-    a_row = df[df["AwayTeam"] == a_team].iloc[-1]
+]
     X_input = [[h_row["FTHG_roll"], a_row["FTAG_roll"], h_row["HG_conc_roll"], a_row["AG_conc_roll"]]]
     
     p_now = m_res.predict_proba(X_input)[0]
@@ -152,3 +166,4 @@ if st.button("🚀 RUN SMART ANALYSIS"):
     
     clear_ram()
     
+
