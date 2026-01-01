@@ -6,6 +6,7 @@ import os
 import gc
 from sklearn.ensemble import RandomForestClassifier
 from pathlib import Path
+import time
 
 # --- RAM-SAFE CONFIG ---
 st.set_page_config(page_title="AI Match Master Ultra", page_icon="🔮", layout="wide")
@@ -32,11 +33,12 @@ LEAGUES = {
     "🇩🇰 Denmark": f"{BASE_EXTRA}DNK.csv"
 }
 
-# --- 2. ENGINE (Form + Goals) ---
-@st.cache_data(ttl=1800)
+# --- 2. ENGINE (Auto-Updating & RAM-Safe) ---
+@st.cache_data(ttl=3600) # Cache data for 1 hour
 def load_data(url):
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
+    # Feature Engineering
     for s in ["FTHG", "FTAG"]:
         df[f"{s}_roll"] = df.groupby("HomeTeam")[s].transform(lambda x: x.rolling(5, closed='left').mean().fillna(x.mean()))
     df["HG_conc_roll"] = df.groupby("HomeTeam")["FTAG"].transform(lambda x: x.rolling(5, closed='left').mean().fillna(x.mean()))
@@ -47,19 +49,28 @@ def load_data(url):
 def train_models(url, df):
     code = url.split("/")[-1].replace(".csv", "")
     res_path, goal_path = f"models/{code}_res.pkl", f"models/{code}_goal.pkl"
-    X = df[["FTHG_roll", "FTAG_roll", "HG_conc_roll", "AG_conc_roll"]]
-    if not os.path.exists(res_path):
+    
+    # Check if model needs updating (if missing or older than 24h)
+    needs_train = not os.path.exists(res_path) or (time.time() - os.path.getmtime(res_path) > 86400)
+    
+    if needs_train:
+        X = df[["FTHG_roll", "FTAG_roll", "HG_conc_roll", "AG_conc_roll"]]
+        # Training Result Model
         y_res = df["FTR"].map({"H": 2, "D": 1, "A": 0})
-        pickle.dump(RandomForestClassifier(n_estimators=100, max_depth=5).fit(X, y_res), open(res_path, "wb"))
-    if not os.path.exists(goal_path):
+        with open(res_path, "wb") as f:
+            pickle.dump(RandomForestClassifier(n_estimators=50, max_depth=5).fit(X, y_res), f)
+        # Training Goal Model
         y_goal = df["Over25"]
-        pickle.dump(RandomForestClassifier(n_estimators=100, max_depth=5).fit(X, y_goal), open(goal_path, "wb"))
+        with open(goal_path, "wb") as f:
+            pickle.dump(RandomForestClassifier(n_estimators=50, max_depth=5).fit(X, y_goal), f)
+        get_model.clear() # Refresh resource cache
     clear_ram()
 
-@st.cache_resource
+@st.cache_resource(max_entries=2) # Keep only 2 leagues in RAM to prevent crashes
 def get_model(url, m_type):
     code = url.split("/")[-1].replace(".csv", "")
-    return pickle.load(open(f"models/{code}_{m_type}.pkl", "rb"))
+    with open(f"models/{code}_{m_type}.pkl", "rb") as f:
+        return pickle.load(f)
 
 # --- 3. UI ---
 sel_league = st.sidebar.selectbox("Competition", list(LEAGUES.keys()))
@@ -69,7 +80,6 @@ m_res, m_goal = get_model(LEAGUES[sel_league], "res"), get_model(LEAGUES[sel_lea
 
 teams = sorted(df["HomeTeam"].unique())
 
-# Sidebar Form Guide
 def get_form_str(team):
     results = df[(df['HomeTeam']==team) | (df['AwayTeam']==team)].tail(5)
     f = []
@@ -81,6 +91,7 @@ def get_form_str(team):
 
 with st.sidebar:
     st.divider()
+    st.info(f"📅 Last Data Update: {df['Date'].iloc[-1]}")
     st.write("**Recent Team Form**")
     for t in teams: st.caption(f"{get_form_str(t)} {t}")
 
@@ -113,15 +124,14 @@ if st.button("🚀 RUN SMART ANALYSIS"):
     else:
         f_h, f_d, f_a = p_now[2], p_now[1], p_now[0]
 
-    # SQUAD IMPACT PENALTY (5% reduction per key player missing)
+    # Squad Penalty
     f_h -= (len(h_missing) * 0.05)
     f_a -= (len(a_missing) * 0.05)
-    f_h, f_a = max(0, f_h), max(0, f_a)
+    f_h, f_a = max(0.01, f_h), max(0.01, f_a)
     f_d = 1 - f_h - f_a
 
-    # --- OUTPUTS ---
     st.divider()
-    st.subheader("📊 Adjusted Probability (Squad + Form + H2H)")
+    st.subheader("📊 Adjusted Probability")
     cols = st.columns(3)
     cols[0].metric(h_team, f"{f_h*100:.1f}%", delta=f"-{len(h_missing)*5}%" if h_missing else None, delta_color="inverse")
     cols[1].metric("Draw", f"{f_d*100:.1f}%")
@@ -136,14 +146,9 @@ if st.button("🚀 RUN SMART ANALYSIS"):
 
     with st.expander("🛡️ Strategic Insights & Market Traps"):
         st.info(f"💡 **1X:** {(f_h+f_d)*100:.1f}% | **X2:** {(f_a+f_d)*100:.1f}%")
-        
-        # ODD EFFECT (The Trap Detector)
         imp_h = 1 / h_odd
         if f_h - imp_h > 0.18: st.success("💎 VALUE: Home team is stronger than the market thinks.")
         elif imp_h - f_h > 0.22: st.error("🚨 SPORTY TRAP: Odds are too low for a weakened squad.")
-        
-        if h_missing or a_missing:
-            st.warning(f"⚠️ Absence Impact: Probabilities were reduced because of missing players.")
     
     clear_ram()
     
